@@ -15,6 +15,7 @@ class Player then (@id, @source, @target) ->
 
 class PlayerState then (
   @path # [Node]
+  @bottleneck # Edge
   @bandwidth # Num, total bandwidth from source-target
   @diff # Num, diff since last known bandwidth
 ) ->
@@ -32,7 +33,7 @@ nodes = (.map ([x, y], i) -> new Node i, x, y) [] =
 edges = (.map ([s, t, b], i) -> new Edge i, nodes[s], nodes[t], b) [] =
   * 0 1 10
   * 1 2 5
-  * 2 3 8
+  * 2 3 15
   * 3 4 5
   * 3 6 10
   * 6 5 9
@@ -71,6 +72,8 @@ game =
   undetermined = new Set players
   residuals = edges.map (.bandwidth)
 
+  bottlenecks = [void for players]
+
   while undetermined.size > 0
     global-bottleneck = least-equal-share utilization, residuals
 
@@ -81,6 +84,7 @@ game =
 
     u.for-each !(player) ->
       player-bandwidth[player.id] = fair
+      bottlenecks[player.id] = edges[global-bottleneck]
       for edge in paths[player.id]
         residuals[edge.id] -= fair
         utilization[edge.id]delete player
@@ -90,6 +94,7 @@ game =
     utilization: final-utilization
     players: players.map (player, i) -> new PlayerState do
       paths[i]
+      bottlenecks[i]
       player-bandwidth[i]
       0 # no diff
 
@@ -131,9 +136,18 @@ draw = !->
       y2: y <<(.target.y)
       \stroke-width : (.bandwidth) >> (*4)
   d3.select \#nodes .select-all \.node .data nodes
-    ..enter!append \circle 
-      .attr \class \node
+    ..enter!append \circle
+      .attr \class ->
+        "node #{if it.player then "player-#{that.id}" else ''}"
       .call drag
+      .on \mouseenter !->
+        if it.player?
+          d3.select "\#player-#{that.id}" .classed \hover true
+          d3.select \#topology .classed \dim true
+      .on \mouseleave !->
+        if it.player?
+          d3.select "\#player-#{that.id}" .classed \hover false
+          d3.select \#topology .classed \dim false
     ..attr do
       cx: x << (.x)
       cy: y << (.y)
@@ -142,66 +156,66 @@ draw = !->
     ..enter!append \g
       ..attr \class \player
       ..attr \id -> "player-#{it.id}"
-      ..append \circle .attr \class \source
-      ..append \circle .attr \class \target
-      ..append \path .attr \class \path
-    ..select \.target .attr do
-      cx: x << (.target.x)
-      cy: y << (.target.y)
-      r: -> 10 + 2 * d3.max it.target.edges, (.bandwidth)
-    ..select \.source .attr do
-      cx: x << (.source.x)
-      cy: y << (.source.y)
-      r: -> 10 + 2 * d3.max it.source.edges, (.bandwidth)
-    ..select \.path
-      .attr \d (player) ->
-        s = game.players[player.id]
+      #..append \circle .attr \class \source
+      #..append \circle .attr \class \target
+      ..append \g .attr \class \path
+    #..select \.target .attr do
+      #cx: x << (.target.x)
+      #cy: y << (.target.y)
+      #r: -> 10 + 2 * d3.max it.target.edges, (.bandwidth)
+    #..select \.source .attr do
+      #cx: x << (.source.x)
+      #cy: y << (.source.y)
+      #r: -> 10 + 2 * d3.max it.source.edges, (.bandwidth)
+    ..select \.path .each (player) ->
+      s = game.players[player.id]
 
-        line = s.path.map ->
-          x1 = x it.source.x
-          x2 = x it.target.x
-          y1 = y it.source.y
-          y2 = y it.target.y
+      line = s.path.map ->
+        x1 = x it.source.x
+        x2 = x it.target.x
+        y1 = y it.source.y
+        y2 = y it.target.y
 
-          utilization = game.utilization[it.id].slice!
+        utilization = game.utilization[it.id].slice!
 
-          # adjust to angle of path, so that all allocations on the edge
-          # are shown
-          offset-start = 0
-          for u in utilization
-            break if u is player
-            offset-start += game.players[u.id]bandwidth
+        # adjust to angle of path, so that all allocations on the edge
+        # are shown
+        offset-start = 0
+        for u in utilization
+          break if u is player
+          offset-start += game.players[u.id]bandwidth
 
-          # since stroke width is from the center, increase offset by half
-          # of our bandwidth
-          offset-start = offset-start + game.players[player.id]bandwidth / 2
+        # since stroke width is from the center, increase offset by half
+        # of our bandwidth
+        b = game.players[player.id]bandwidth
+        offset-start = offset-start + b / 2
 
-          # offset-start is from top edge of edge's pipe, so y-offset is
-          # actually negative for above the center
-          offset = offset-start - it.bandwidth / 2
+        # offset-start is from top edge of edge's pipe, so y-offset is
+        # actually negative for above the center
+        offset = offset-start - it.bandwidth / 2
 
-          # offset is a y-offset if our path is horizontal, so rotate
-          # according to source/target orientation
-          offset *= 4
-          angle = Math.atan2 y1 - y2, x2 - x1
-          x-offset = offset * Math.sin angle
-          y-offset = offset * Math.cos angle
+        # offset is a y-offset if our path is horizontal, so rotate
+        # according to source/target orientation
+        offset *= 4
+        angle = Math.atan2 y1 - y2, x2 - x1
+        x-offset = offset * Math.sin angle
+        y-offset = offset * Math.cos angle
 
-          x1 += x-offset
-          x2 += x-offset
-          y1 += y-offset
-          y2 += y-offset
+        x1 += x-offset
+        x2 += x-offset
+        y1 += y-offset
+        y2 += y-offset
 
-          #"M #x1 #y1 L #{x1 + x-offset} #{y1 + y-offset} M #{x1 + x-offset} #{y1 + y-offset} L
-           ##{x2 + x-offset} #{y2 + y-offset}"
-          "M #x1 #y1 L #x2 #y2"
-        .join ' '
-      .attr \stroke-width ->
-        game.players[it.id]bandwidth * 4
+        {x1, x2, y1, y2, bottleneck: it is s.bottleneck}
 
-  function to-array set
-    a = []
-    set.for-each !-> a.push it
-    return a
+      d3.select this .select-all \.segment .data line
+        ..enter!append \line .attr \class \segment
+        ..attr do
+          x1: (.x1)
+          y1: (.y1)
+          x2: (.x2)
+          y2: (.y2)
+          \stroke-width : game.players[player.id]bandwidth * 4
+        .classed \bottleneck (.bottleneck)
 
 draw!

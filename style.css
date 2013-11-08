@@ -10,18 +10,39 @@
     fill: none !important;
 }
 
-#player-0 {
+#player-0, .player-0 {
   fill: orange;
   stroke: orange;
 }
 
-#player-1 {
+#player-1, .player-1 {
   fill: green;
   stroke: green;
 }
 
-#player-2 {
+#player-2, .player-2 {
   fill: blue;
   stroke: blue;
 }
 
+.player:hover > .path > .bottleneck, .player.hover > .path > .bottleneck {
+    animation: stress;
+    animation-duration: 0.5s;
+    animation-iteration-count: infinite;
+    animation-direction: alternate;
+    animation-timing-function: linear
+}
+
+#topology.dim .player:not(.hover) {
+  opacity: 0.2;
+}
+
+@keyframes stress {
+  from {
+    stroke: inherit;
+  }
+
+  to {
+    stroke: red;
+  }
+}
