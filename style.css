@@ -1,5 +1,5 @@
 .edge {
-  stroke: rgba(0,0,0,0.3)
+  stroke: rgba(0,0,0,0.1)
 }
 
 .node {
@@ -33,8 +33,13 @@
     animation-timing-function: linear
 }
 
+.player {
+    transition: opacity 1s;
+}
+
 #topology.dim .player:not(.hover) {
-  opacity: 0.2;
+  opacity: 0.3;
+  transition: opacity 1s;
 }
 
 @keyframes stress {
