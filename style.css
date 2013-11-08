@@ -1,0 +1,27 @@
+.edge {
+  stroke: rgba(0,0,0,0.5)
+}
+
+.node {
+  fill: black;
+}
+
+.path {
+    fill: none !important;
+}
+
+#player-0 {
+  fill: orange;
+  stroke: orange;
+}
+
+#player-1 {
+  fill: green;
+  stroke: green;
+}
+
+#player-2 {
+  fill: blue;
+  stroke: blue;
+}
+
