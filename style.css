@@ -2,8 +2,8 @@
   stroke: rgba(0,0,0,0.1)
 }
 
-.node {
-  fill: black;
+.vertex {
+  fill: #aaa;
 }
 
 .path {
