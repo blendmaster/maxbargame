@@ -57,8 +57,16 @@
   }
 }
 
-.want, .limit, .dragging, #handle-bot, #handle-top {
+.want, .limit, .dragging, #handle-bot, #handle-top, #make-new {
   cursor: ns-resize;
+}
+
+#handle-top, #handle-bot {
+  fill: rgba(0,0,0,0.2)
+}
+
+#pipe {
+  fill: rgba(0,0,0,0.1)
 }
 
 .alloc {
@@ -73,17 +81,24 @@
   width: 100%;
   height: calc(100% - 2em);
   margin: 1em 0;
-  z-index: -1;
   position: absolute;
   left: 0;
   top: 0;
 }
 
 #controls {
-  text-align: right;
-  opacity: 0.2;
+  position: absolute;
+  margin-left: -10em;
+  left: 50%;
+  width: 20em;
+  text-align: center;
 }
 
-#controls:hover {
-  opacity: 1;
+body {
+  display: -webkit-flex;
+  display: flex;
+}
+
+#make-new {
+  fill: transparent;
 }

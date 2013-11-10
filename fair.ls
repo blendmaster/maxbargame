@@ -12,13 +12,20 @@ body = d3.select document.body
 
 lock = document.get-element-by-id \lock
   ..checked = true
+mode = document.get-element-by-id \mode
 
-svg = d3.select \#svg 
+svg = d3.select \#svg
   ..attr do
     {width, height, viewBox: "0 0 #width #height", preserveAspectRatio: \none}
+  pipe = ..append \rect .attr {width: sections.1, x: sections.2, height: bandwidth}
+    .attr \id \pipe
   paths = ..append \g .attr \id \paths
   wants = ..append \g .attr \id \wants
   limits = ..append \g .attr \id \limits
+  make-new = ..append \rect .attr \id \make-new
+    .attr {width, x: 0, height: 0}
+  pending-player = ..append \path .attr \id \pending-player
+
   handles = ..append \g .attr \id \handles
     handle-top = ..append \rect
       .attr do
@@ -33,36 +40,47 @@ svg = d3.select \#svg
         width: sections.1
         height: handle-height
 
+id = 0
 class Player
-  (@id, @wanted, @limited) ->
+  (@wanted, @limited) ->
+    @id = id++
+    @color = @id % 8
     @needed = Math.min @wanted, @limited
+    @space = Math.max @wanted, @limited
   to-string: -> @id
 
-players = (.map ([w, l], i) -> new Player i, w, l) [] =
-  * 50 50
-  * 60 60
-  * 70 30
-  * 30 30
+players = [new Player 50, 50]
 
 bandwidth = 100
-by-needed = comparator (.needed)
 
-var allocs, stack-allocs
+by-needed = comparator (.needed)
+by-space = comparator (.space)
+
+allocs = {}
+var stack-allocs
 reallocate = !->
-  sorted = players.slice!sort by-needed
-  allocs := max-min-fair sorted, bandwidth
+  allocs := {}
+  stack-allocs := {}
+  switch mode.value
+  case \first
+    remaining = bandwidth
+    for p in players
+      allocs[p] = alloc = Math.min remaining, p.needed
+      remaining -= alloc
+  case \equal
+    fair = bandwidth / players.length
+    for p in players
+      allocs[p] = fair
+  case \fair
+    sorted = players.slice!sort by-needed
+    allocs := max-min-fair sorted, bandwidth
 
   offset = 0
-  stack-allocs := for p in players
-    o = offset
+  for p in players
+    stack-allocs[p] = offset
     offset += allocs[p]
-    o
 
 reallocate!
-
-delay-idx = {}
-for p, i in players
-  delay-idx[p] = i
 
 drag = d3.behavior.drag!
   .on \dragstart !->
@@ -83,54 +101,77 @@ drag-wanted = d3.behavior.drag!
     body.classed \dragging true
   .on \drag !(player) ->
     player.wanted += (d3.event.dy)
-    player.wanted = Math.max 1, player.wanted
+    player.wanted = Math.max 0, player.wanted
     if lock.checked
       player.limited = player.wanted
     player.needed = Math.min player.wanted, player.limited
-
-    for p, i in players
-      delay-idx[p] =
-        if p is player then 0
-        else if p.id > player.id then i
-        else i + 1
+    player.space = Math.max player.wanted, player.limited
 
     reallocate!
     draw-schematic!
-  .on \dragend !->
+  .on \dragend !(player) ->
+    if player.needed < 5
+      players.splice players.index-of(player), 1
+      duration = 1500ms
+    else
+      duration = 0
     body.classed \dragging false
     reallocate!
-    draw-schematic!
+    draw-schematic duration
+
+mode-change = !->
+  reallocate!
+  draw-schematic 1500ms
+mode.add-event-listener \change mode-change
+mode.add-event-listener \keyup mode-change
 
 drag-limited = d3.behavior.drag!
   .on \dragstart !->
     body.classed \dragging true
   .on \drag !(player) ->
     player.limited += d3.event.dy
-    player.limited = Math.max 1, player.limited
+    player.limited = Math.max 0, player.limited
     if lock.checked
       player.wanted = player.limited
     player.needed = Math.min player.wanted, player.limited
-    for p, i in players
-      delay-idx[p] =
-        if p is player then 0
-        else if p.id > player.id then i
-        else i + 1
-
+    player.space = Math.max player.wanted, player.limited
     reallocate!
     draw-schematic!
   .on \dragend !->
+    if player.needed < 5
+      players.splice players.index-of(player), 1
+      duration = 1500ms
+    else
+      duration = 0
     body.classed \dragging false
     reallocate!
-    draw-schematic!
+    draw-schematic duration
+
+new-needed = 0
+var new-player
+
+make-new.call do
+  d3.behavior.drag!
+    .on \drag !->
+      new-needed += d3.event.dy
+      new-needed := Math.max 0, new-needed
+      draw-schematic!
+    .on \dragend !->
+      if new-needed > 5
+        new-player := new Player new-needed, new-needed
+        players.push new-player
+      new-needed := 0
+      reallocate!
+      draw-schematic 1000ms
 
 curve = sections.1 / 3
 
-attr = (sel, duration, delay, attrs, val) ->
+attr = (sel, duration, attrs, val) ->
   if duration > 0
     if val?
-      sel.transition duration .delay delay .attr attrs, val
+      sel.transition!duration duration .attr attrs, val
     else
-      sel.transition duration .delay delay .attr attrs
+      sel.transition!duration duration .attr attrs
   else
     if val?
       sel.attr attrs, val
@@ -138,55 +179,63 @@ attr = (sel, duration, delay, attrs, val) ->
       sel.attr attrs
 
 draw-schematic = !(duration ? 0) ->
-  offset = 0
-  stack-wanted = for p in players
-    o = offset
-    offset += p.wanted
-    o
+  remaining = height
+  i = players.length + 1 # extra space
+  layout = {}
+  for p in players.slice!sort by-space .reverse!
+    equal = remaining / i--
+    layout[p] = lay = if p.space > equal then p.space else equal
+    remaining -= lay
 
-  offset = 0
-  stack-limited = for p in players
-    o = offset
-    offset += p.limited
-    o
+  offset = {}
+  used = 0
+  for p in players
+    offset[p] = used + layout[p]/2 - p.space/2
+    used += layout[p]
+
+  make-new.attr height: remaining, y: used
+  start = used + remaining/2 - new-needed/2
+  end = start + new-needed
 
   start-pipe = height / 2 - bandwidth / 2
   end-pipe = start-pipe + bandwidth
 
-  delay = (d, i) -> 1000 * delay-idx[d] / players.length
-
-  attr handle-top, duration, 0, \y (start-pipe) - handle-height
-  attr handle-bot, duration, 0, \y (end-pipe)
-  wants.select-all \.want .data players
-    ..exit!remove!
+  attr handle-top, duration, \y (start-pipe) - handle-height
+  attr handle-bot, duration, \y (end-pipe)
+  attr pipe, duration, y: start-pipe, height: bandwidth
+  wants.select-all \.want .data players, (.id)
+    ..exit!transition 1000ms .style \opacity 0 .remove!
     ..enter!append \rect
-      .attr \class -> "want player-#it"
+      .attr \class -> "want q#{it.color}-8"
       .call drag-wanted
-      .attr x: 0, width: sections.1 - sections.0
-    attr .., duration, delay,
+      .attr x: 0, width: sections.1 - sections.0, height: 0
+      .attr \y -> if it is new-player then start
+    attr .., duration,
       x: 0
-      y: (p, i) -> Math.max stack-limited[i], stack-wanted[i]
+      y: (offset.)
       height: (.wanted)
-  limits.select-all \.limit .data players
-    ..exit!remove!
+  limits.select-all \.limit .data players, (.id)
+    ..exit!transition 1000ms .style \opacity 0 .remove!
     ..enter!append \rect
-      .attr \class -> "limit player-#it"
-      .attr x: sections.4, width: sections.4 - sections.3
+      .attr \class -> "limit q#{it.color}-8"
+      .attr x: sections.4, width: sections.4 - sections.3, height: 0
+      .attr \y -> if it is new-player then start
       .call drag-limited
-    attr .., duration, delay,
-      y: (p, i) -> Math.max stack-limited[i], stack-wanted[i]
+    attr .., duration,
+      y: (offset.)
       height: (.limited)
-  paths.select-all \.alloc .data players
-    ..exit!remove!
+  paths.select-all \.alloc .data players, (.id)
+    ..exit!transition 1000ms .style \opacity 0 .remove!
     ..enter!append \path .attr do
-      class: -> "alloc player-#it"
-    attr .., duration, delay,
-      d: (p, i) ->
+      class: -> "alloc q#{it.color}-8"
+      d: -> if it is new-player then pending-player.attr \d else null
+    attr .., duration,
+      d: (p) ->
         thickness = Math.min p.limited, p.wanted, allocs[p]
-        start = Math.max stack-limited[i], stack-wanted[i]
+        start = offset[p]
         end-w = start + thickness
         end-l = start + thickness
-        a = start-pipe + stack-allocs[i]
+        a = start-pipe + stack-allocs[p]
         end-a = a + thickness
         "
         M #{sections.0} #start
@@ -203,6 +252,23 @@ draw-schematic = !(duration ? 0) ->
         L #{sections.0} #end-w
         Z
         "
+  pending-player.attr \d,
+    "
+    M #{sections.0} #start
+    L #{sections.1} #start
+    C #{sections.1 + curve} #start #{sections.2 - curve} #start #{sections.2} #start
+    L #{sections.3} #start
+    C #{sections.3 + curve} #start #{sections.4 - curve} #start #{sections.4} #start
+    L #{sections.5} #start
+    L #{sections.5} #end
+    L #{sections.4} #end
+    C #{sections.4 - curve} #end #{sections.3 + curve} #end #{sections.3} #end
+    L #{sections.2} #end
+    C #{sections.2 - curve} #end #{sections.1 + curve} #end #{sections.1} #end
+    L #{sections.0} #end
+    Z
+    "
+  pending-player.attr \class "q#{id % 8}-8"
 
 draw-schematic!
 
