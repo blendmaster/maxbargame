@@ -25,6 +25,11 @@
   stroke: blue;
 }
 
+#player-3, .player-3 {
+  fill: chartreuse;
+  stroke: chartreuse;
+}
+
 .player:hover > .path > .bottleneck, .player.hover > .path > .bottleneck {
     animation: stress;
     animation-duration: 0.5s;
@@ -50,4 +55,50 @@
   to {
     stroke: red;
   }
+}
+
+.want, .limit, .dragging, #handle-bot, #handle-top, #make-new {
+  cursor: ns-resize;
+}
+
+#handle-top, #handle-bot {
+  fill: rgba(0,0,0,0.2)
+}
+
+#pipe {
+  fill: rgba(0,0,0,0.1)
+}
+
+.alloc {
+ pointer-events: none;
+}
+
+.want, .limit {
+  opacity: 0.5
+}
+
+#svg {
+  width: 100%;
+  height: calc(100% - 2em);
+  margin: 1em 0;
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+#controls {
+  position: absolute;
+  margin-left: -10em;
+  left: 50%;
+  width: 20em;
+  text-align: center;
+}
+
+body {
+  display: -webkit-flex;
+  display: flex;
+}
+
+#make-new {
+  fill: transparent;
 }

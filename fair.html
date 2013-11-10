@@ -1,0 +1,20 @@
+<!DOCTYPE html>
+<html lang=en>
+<meta charset=utf-8>
+<link rel=stylesheet href=style.css>
+<link rel=stylesheet href=colorbrewer.css>
+<title>Max-min fairness demo</title>
+
+<svg id=svg class=Dark2 width=500 height=500></svg>
+
+<section id=controls>
+  <select id=mode>
+    <option value=first>First</option>
+    <option value=equal>Equal</option>
+    <option value=fair>Fair</option>
+  </select>
+  <label><input type=checkbox id=lock checked> Lock Drag</label>
+</section>
+
+<script src=d3.v3.js></script>
+<script src=fair.js></script>
