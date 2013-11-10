@@ -44,7 +44,8 @@ by-needed = comparator (.needed)
 
 var allocs, stack-allocs
 reallocate = !->
-  allocs := max-min-fair players, bandwidth
+  sorted = players.slice!sort by-needed
+  allocs := max-min-fair sorted, bandwidth
 
   offset = 0
   stack-allocs := for p in players
@@ -54,14 +55,15 @@ reallocate = !->
 
 reallocate!
 
-var y-scale, total-wanted, total-limited, scale-height
-var wanted-padding, limited-padding, stack-wanted, stack-limited
+delay-idx = {}
+for p, i in players
+  delay-idx[p] = i
+
+var y-scale, scale-height
+var stack-wanted, stack-limited
 rescale = !->
-  total-wanted := d3.sum players, (.wanted)
-  total-limited := d3.sum players, (.limited)
-  scale-height := Math.max(total-limited, total-wanted, bandwidth) + 1
-  wanted-padding := (scale-height - total-wanted) / (players.length - 1)
-  limited-padding := (scale-height - total-limited) / (players.length - 1)
+  max = d3.sum players, -> Math.max it.wanted, it.limited
+  scale-height := Math.max(max, bandwidth)
 
   y-scale := d3.scale.linear!
     .domain [0 scale-height]
@@ -70,13 +72,13 @@ rescale = !->
   offset = 0
   stack-wanted := for p in players
     o = offset
-    offset += p.wanted + wanted-padding
+    offset += p.wanted
     o
 
   offset = 0
   stack-limited := for p in players
     o = offset
-    offset += p.limited + wanted-padding
+    offset += p.limited
     o
 
 rescale!
@@ -92,47 +94,108 @@ drag = d3.behavior.drag!
   .on \dragend !->
     body.classed \dragging false
     rescale!
-    draw-schematic!
+    draw-schematic 1000ms
 handle-top.call drag
 handle-bot.call drag
 
+drag-wanted = d3.behavior.drag!
+  .on \dragstart !->
+    body.classed \dragging true
+  .on \drag !(player) ->
+    player.wanted += y-scale.invert(d3.event.dy)
+    player.wanted = Math.max 1, player.wanted
+    player.needed = Math.min player.wanted, player.limited
+
+    for p, i in players
+      delay-idx[p] =
+        if p is player then 0
+        else if p.id > player.id then i
+        else i + 1
+
+    #reallocate!
+    #rescale!
+    draw-schematic!
+  .on \dragend !->
+    body.classed \dragging false
+    reallocate!
+    rescale!
+    draw-schematic 1000ms
+
+drag-limited = d3.behavior.drag!
+  .on \dragstart !->
+    body.classed \dragging true
+  .on \drag !(player) ->
+    player.limited += y-scale.invert(d3.event.dy)
+    player.limited = Math.max 1, player.limited
+    player.needed = Math.min player.wanted, player.limited
+    for p, i in players
+      delay-idx[p] =
+        if p is player then 0
+        else if p.id > player.id then i
+        else i + 1
+
+    #reallocate!
+    #rescale!
+    draw-schematic!
+  .on \dragend !->
+    body.classed \dragging false
+    reallocate!
+    rescale!
+    draw-schematic 1000ms
+
 curve = sections.1 / 3
 
-draw-schematic = !->
+attr = (sel, duration, delay, attrs, val) ->
+  if duration > 0
+    if val?
+      sel.transition duration .delay delay .attr attrs, val
+    else
+      sel.transition duration .delay delay .attr attrs
+  else
+    if val?
+      sel.attr attrs, val
+    else
+      sel.attr attrs
+
+draw-schematic = !(duration ? 0) ->
   start-pipe = scale-height / 2 - bandwidth / 2
   end-pipe = start-pipe + bandwidth
 
-  handle-top.attr \y y-scale(start-pipe) - handle-height
-  handle-bot.attr \y y-scale(end-pipe)
+  delay = (d, i) -> 1000 * delay-idx[d] / players.length
+
+  attr handle-top, duration, 0, \y y-scale(start-pipe) - handle-height
+  attr handle-bot, duration, 0, \y y-scale(end-pipe)
   wants.select-all \.want .data players
     ..exit!remove!
-    ..enter!append \rect .attr do
-      class: -> "want player-#it"
-    ..attr do
+    ..enter!append \rect
+      .attr \class -> "want player-#it"
+      .call drag-wanted
+      .attr x: 0, width: sections.1 - sections.0
+    attr .., duration, delay,
       x: 0
       y: (p, i) -> y-scale Math.max stack-limited[i], stack-wanted[i]
-      width: sections.1 - sections.0
       height: y-scale << (.wanted)
   limits.select-all \.limit .data players
     ..exit!remove!
-    ..enter!append \rect .attr do
-      class: -> "limit player-#it"
-    ..attr do
-      x: sections.4
+    ..enter!append \rect
+      .attr \class -> "limit player-#it"
+      .attr x: sections.4, width: sections.4 - sections.3
+      .call drag-limited
+    attr .., duration, delay,
       y: (p, i) -> y-scale Math.max stack-limited[i], stack-wanted[i]
-      width: sections.4 - sections.3
       height: y-scale << (.limited)
   paths.select-all \.alloc .data players
     ..exit!remove!
     ..enter!append \path .attr do
       class: -> "alloc player-#it"
-    ..attr do
+    attr .., duration, delay,
       d: (p, i) ->
+        thickness = y-scale Math.min p.limited, p.wanted, allocs[p]
         start = y-scale Math.max stack-limited[i], stack-wanted[i]
-        end-w = start + y-scale p.limited
-        end-l = start + y-scale allocs[i]
+        end-w = start + thickness
+        end-l = start + thickness
         a = y-scale start-pipe + stack-allocs[i]
-        end-a = a + y-scale allocs[i]
+        end-a = a + thickness
         "
         M #{sections.0} #start
         L #{sections.1} #start
@@ -157,7 +220,7 @@ function comparator view
 function max-min-fair players, bandwidth
   allocs = {}
   i = players.length
-  for player in players.slice!sort by-needed
+  for player in players
     fair = bandwidth / i--
     alloc = if player.needed > fair then fair else player.needed
     bandwidth -= alloc

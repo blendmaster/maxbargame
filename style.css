@@ -60,3 +60,12 @@
 .dragging, #handle-bot, #handle-top {
   cursor: ns-resize;
 }
+
+.alloc {
+ pointer-events: none;
+}
+
+.want, .limit {
+  opacity: 0.5
+}
+
