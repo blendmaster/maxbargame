@@ -6,11 +6,22 @@
   fill: #ccc;
 }
 
+.selected {
+  fill: black;
+}
+
+.handle {
+  fill: transparent;
+}
+.edge-handle {
+  stroke: transparent;
+}
+
 .path {
     fill: none !important;
 }
 
-.player:hover > .path > .bottleneck, .player.hover > .path > .bottleneck {
+.player:hover > .bottleneck, .player.hover > .bottleneck {
     animation: stress;
     animation-duration: 0.5s;
     animation-iteration-count: infinite;

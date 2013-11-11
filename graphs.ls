@@ -5,7 +5,7 @@ log = -> # NOP
 
 class Value then to-string: -> @id
 
-class Vertex extends Value then () ->
+class Vertex extends Value then ->
   @x = @y = void
   @id = id++
   @edges = [] # edges connecting this vertex
@@ -227,4 +227,25 @@ function maxbargame topology, players, strategies
   while not equilibrium and iterations < 10
 
   return states
+
+function connected topology, without
+  return false if topology.vertices.length < 1
+  seen = {}
+  count = 1
+  stack = []
+  if topology.vertices.0 is not without
+    stack.push topology.vertices.0
+  else
+    stack.push topology.vertices.1
+
+  seen[stack.0] = true
+  while stack.length > 0
+    v = stack.pop!
+    for e, neighbor of v.neighbors
+      if not seen[neighbor] and neighbor is not without
+        seen[neighbor] = true
+        count++
+        stack.push neighbor
+
+  return count is (topology.vertices.length - 1)
 

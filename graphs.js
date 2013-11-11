@@ -13,9 +13,8 @@ Value = (function(){
 }());
 Vertex = (function(superclass){
   var prototype = extend$((import$(Vertex, superclass).displayName = 'Vertex', Vertex), superclass).prototype, constructor = Vertex;
-  function Vertex(x, y){
-    this.x = x;
-    this.y = y;
+  function Vertex(){
+    this.x = this.y = void 8;
     this.id = id++;
     this.edges = [];
     this.neighbors = {};
@@ -287,6 +286,33 @@ function maxbargame(topology, players, strategies){
   function fn1$(it){
     return strategies[it];
   }
+}
+function connected(topology, without){
+  var seen, count, stack, v, e, ref$, neighbor;
+  if (topology.vertices.length < 1) {
+    return false;
+  }
+  seen = {};
+  count = 1;
+  stack = [];
+  if (topology.vertices[0] !== without) {
+    stack.push(topology.vertices[0]);
+  } else {
+    stack.push(topology.vertices[1]);
+  }
+  seen[stack[0]] = true;
+  while (stack.length > 0) {
+    v = stack.pop();
+    for (e in ref$ = v.neighbors) {
+      neighbor = ref$[e];
+      if (!seen[neighbor] && neighbor !== without) {
+        seen[neighbor] = true;
+        count++;
+        stack.push(neighbor);
+      }
+    }
+  }
+  return count === topology.vertices.length - 1;
 }
 function extend$(sub, sup){
   function fun(){} fun.prototype = (sub.superclass = sup).prototype;

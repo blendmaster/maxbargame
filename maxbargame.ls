@@ -37,7 +37,11 @@ game = maxbargame do
   players
   allocate topology, paths
 
-stroke-scale = 2
+document.get-element-by-id \scale
+  stroke-scale = parse-float ..value
+  ..add-event-listener \input !->
+    stroke-scale := parse-float @value
+    draw!
 
 force = d3.layout.force!
   .size [width, height]
@@ -57,6 +61,7 @@ let
 document.get-element-by-id \play-pause
   .add-event-listener \click !->
     idx++
+    return unless game[idx]?
     state := game[idx]
     users := {}
     for player, strategy of state.strategies
@@ -104,6 +109,22 @@ alloc-line = (state, users, player, edge) -->
     offset, x1, x2, y1, y2, bottleneck: edge is strategy.bottleneck
   }
 
+var selected
+
+svg = d3.select \#topology
+  ..on \click !->
+    if d3.event.target is this
+      if d3.event.ctrl-key and selected?
+        v = new Vertex
+        [x, y] = d3.mouse this
+        v.x = x; v.y = y
+        vertices.push v
+        edges.push new Edge v, selected, 10
+        force.start!
+      else
+        selected := void
+        draw!
+
 force.on \tick !-> draw!
 
 transition = (sel, duration) ->
@@ -118,10 +139,27 @@ fade-out = (it, duration) ->
     .attr \class null # keep out of subsequent selections
     .transition!duration duration .style \opacity 0.01 .remove!
 
+identity = -> it
+
+drag-edge = d3.behavior.drag!
+  .on \dragstart !->
+    force.stop!
+  .on \drag !(edge) ->
+    edge.bandwidth -= d3.event.dy / stroke-scale
+    edge.bandwidth = Math.max 1, edge.bandwidth
+    paths = {}
+    for p, strategy of state.strategies
+      paths[p] = strategy.path
+    state := new State allocate topology, paths
+    draw!
+  .on \dragend !->
+    #draw 1000ms
+    force.resume!
+
 # draw stuff
 draw = !(duration) ->
-  d3.select \#edges .select-all \.edge .data edges
-    fade-out .., duration
+  d3.select \#edges .select-all \.edge .data edges, identity
+    ..exit!remove!
     ..enter!append \line .attr \class \edge
     transition .. .attr do
       x1: (.0.x)
@@ -129,16 +167,62 @@ draw = !(duration) ->
       x2: (.1.x)
       y2: (.1.y)
       \stroke-width : (.bandwidth) >> (* stroke-scale)
-  d3.select \#vertices .select-all \.vertex .data vertices
-    fade-out .., duration
+  d3.select \#edge-handles .select-all \.edge-handle .data edges, identity
+    ..exit!remove!
+    ..enter!append \line .attr \class \edge-handle
+      ..call drag-edge
+    transition .. .attr do
+      x1: (.0.x)
+      y1: (.0.y)
+      x2: (.1.x)
+      y2: (.1.y)
+      \stroke-width : (.bandwidth) >> (* stroke-scale)
+  d3.select \#vertices .select-all \.vertex .data vertices, identity
+    ..exit!remove!
     ..enter!append \circle
       .attr \class \vertex
-      .call force.drag
+    ..classed \selected (is selected)
     transition .. .attr do
       cx: (.x)
       cy: (.y)
       r: -> 0.5 * stroke-scale * d3.max it.edges, (.bandwidth)
-  d3.select \#wedges .select-all \.wedges .data vertices
+  d3.select \#handles .select-all \.handle .data vertices, identity
+    ..exit!remove!
+    ..enter!append \circle
+      .attr \class \handle
+      .call force.drag
+      .on \click !(vertex) ->
+        unless d3.event.default-prevented
+          if d3.event.ctrl-key and selected?
+            unless vertex.srobhgien[selected]?
+              edges.push new Edge vertex, selected, 10
+              force.start!
+          else if d3.event.shift-key
+            if not vertex.player and not vertex.edges.some((e) -> users[e]?)
+              if connected topology, vertex # if still connected without vertex
+                # remove
+                vertices.splice vertices.index-of(vertex), 1
+                for vertex.edges
+                  edges.splice edges.index-of(..), 1
+
+                for vertex.edges
+                  if vertex is ..0
+                    ..1.edges.splice ..1.edges.index-of(..), 1
+                    delete ..1.neighbors[..]
+                    delete ..1.srobhgien[..0]
+                  else
+                    ..0.edges.splice ..0.edges.index-of(..), 0
+                    delete ..0.neighbors[..]
+                    delete ..0.srobhgien[..1]
+
+                force.start!
+          else
+            selected := vertex
+    transition .. .attr do
+      cx: (.x)
+      cy: (.y)
+      r: -> 0.5 * stroke-scale * d3.max it.edges, (.bandwidth)
+  d3.select \#wedges .select-all \.wedges .data vertices, identity
     fade-out .., duration
     ..enter!append \g
       ..attr \class \wedges
@@ -152,7 +236,9 @@ draw = !(duration) ->
       ->
         "#{it.player}#{it.edge}"
     w
-      ..exit!transition!duration duration .style \opacity \0.01 .remove!
+      ..exit!
+        .attr \class null
+        .transition!duration duration .style \opacity \0.01 .remove!
       ..enter!append \path
         ..attr \class \wedge
         ..style \opacity 0.01
@@ -224,7 +310,7 @@ draw = !(duration) ->
           Z
           "
         .style \opacity 1
-  d3.select \#players .select-all \.player .data players
+  d3.select \#players .select-all \.player .data players, identity
     ..exit!remove!
     ..enter!append \g
       ..attr \id -> "player-#it"
@@ -252,6 +338,6 @@ draw = !(duration) ->
           \stroke-width : (d, i, j) ->
             state.strategies[players[j]]bandwidth * stroke-scale
         .style \stroke-opacity 1
-      ..classed \bottleneck (.bottleneck)
+      ..classed \bottleneck (.line.bottleneck)
 
 force.start!
