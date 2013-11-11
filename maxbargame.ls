@@ -1,4 +1,4 @@
-vertices = (.map ([x, y], i) -> new Vertex i, x, y) [] =
+vertices = (.map ([x, y]) -> new Vertex x*5, y*5) [] =
   * 50 10
   * 45 40
   * 70 30
@@ -8,7 +8,7 @@ vertices = (.map ([x, y], i) -> new Vertex i, x, y) [] =
   * 40 85
   * 30 90
   * 10 50
-edges = (.map ([s, t, b], i) -> new Edge i, vertices[s], vertices[t], b) [] =
+edges = (.map ([s, t, b]) -> new Edge vertices[s], vertices[t], b) [] =
   * 0 1 10
   * 1 2 7
   * 2 3 15
@@ -22,33 +22,34 @@ edges = (.map ([s, t, b], i) -> new Edge i, vertices[s], vertices[t], b) [] =
 
 topology = {vertices, edges}
 
-players = (.map ([s, t], i) -> new Player i, vertices[s], vertices[t]) [] =
+players = (.map ([s, t]) -> new Player vertices[s], vertices[t]) [] =
   * 0 6
   * 8 3
   * 5 2
 
-paths = (.map (.map (edges.))) [] =
+path-idx = (.map (.map (edges.))) [] =
   * 0 1 2 4
   * 8 9 4
   * 5 4 2
+
+player-color = d3.scale.ordinal!
+  .range colorbrewer.Dark2.8
+
+paths = {}
+for p, i in players
+  paths[p] = path-idx[i]
 
 game = maxbargame do
   topology
   players
   allocate topology, paths
 
-x = d3.scale.linear!
-  .domain [0 100]
-  .range [0 500]
-
-y = d3.scale.linear!
-  .domain [0 100]
-  .range [0 500]
+stroke-scale = 2
 
 drag = d3.behavior.drag!
+  .origin -> it
   .on \drag !->
-    it.x += x.invert d3.event.dx
-    it.y += y.invert d3.event.dy
+    it{x, y} = d3.event
     draw!
 
 idx = 0
@@ -61,16 +62,16 @@ document.get-element-by-id \play-pause
 alloc-line = (state, users, player, edge) -->
   strategy = state.strategies[player]
 
-  x1 = x edge.0.x
-  x2 = x edge.1.x
-  y1 = y edge.0.y
-  y2 = y edge.1.y
+  x1 = edge.0.x
+  x2 = edge.1.x
+  y1 = edge.0.y
+  y2 = edge.1.y
 
   # adjust to angle of path, so that all allocations on the edge
   # are shown
   offset-start = 0
   for u in users[edge]
-    break if u is player
+    break if u is "#player"
     offset-start += state.strategies[u]bandwidth
 
   # since stroke width is from the center, increase offset by half
@@ -85,7 +86,7 @@ alloc-line = (state, users, player, edge) -->
 
   # offset is a y-offset if our path is horizontal, so rotate
   # according to edge orientation
-  offset *= 4
+  offset *= stroke-scale
   angle = Math.atan2 y1 - y2, x2 - x1
   x-offset = offset * Math.sin angle
   y-offset = offset * Math.cos angle
@@ -106,17 +107,17 @@ draw = !->
   users = {}
   for player, strategy of state.strategies
     for edge in strategy.path
-      users[][edge]push players[player]
+      users[][edge]push player
 
   d3.select \#edges .select-all \.edge .data edges
     ..exit!remove!
     ..enter!append \line .attr \class \edge
     ..attr do
-      x1: x << (.0.x)
-      y1: y << (.0.y)
-      x2: x << (.1.x)
-      y2: y << (.1.y)
-      \stroke-width : (.bandwidth) >> (*4)
+      x1: (.0.x)
+      y1: (.0.y)
+      x2: (.1.x)
+      y2: (.1.y)
+      \stroke-width : (.bandwidth) >> (* stroke-scale)
   d3.select \#vertices .select-all \.vertex .data vertices
     ..exit!remove!
     ..enter!append \circle
@@ -131,9 +132,9 @@ draw = !->
           d3.select "\#player-#that" .classed \hover false
           d3.select \#topology .classed \dim false
     ..attr do
-      cx: x << (.x)
-      cy: y << (.y)
-      r: -> 2 * d3.max it.edges, (.bandwidth)
+      cx: (.x)
+      cy: (.y)
+      r: -> 0.5 * stroke-scale * d3.max it.edges, (.bandwidth)
   d3.select \#wedges .select-all \.wedges .data vertices
     ..exit!remove!
     ..enter!append \g
@@ -147,27 +148,28 @@ draw = !->
     w
       ..exit!remove!
       ..enter!append \path
-      ..attr \class -> "wedge player-#{it.player}"
+      ..attr \class \wedge
+      ..style \fill (.player) >> player-color
       ..attr \d ({player, edge}, i, vertex-id) ->
         vertex = vertices[vertex-id]
 
-        cx = x vertex.x
-        cy = y vertex.y
-        r = 2 * d3.max vertex.edges, (.bandwidth)
+        cx = vertex.x
+        cy = vertex.y
+        r = 0.5 * stroke-scale * d3.max vertex.edges, (.bandwidth)
         line = alloc-line state, users, player, edge
 
         {angle, offset-start, offset-end} = line
         offset-start -= edge.bandwidth / 2
         offset-end -= edge.bandwidth / 2
-        offset-start *= 4; offset-end *= 4
+        offset-start *= stroke-scale; offset-end *= stroke-scale
 
         if vertex is edge.0
-          x2 = x edge.1.x
-          y2 = y edge.1.y
+          x2 = edge.1.x
+          y2 = edge.1.y
           sign = d-sign = 1
         else
-          x2 = x edge.0.x
-          y2 = y edge.0.y
+          x2 = edge.0.x
+          y2 = edge.0.y
           sign = d-sign = -1
 
         osx = offset-start * Math.sin angle
@@ -195,7 +197,11 @@ draw = !->
 
         # offset-end line
         D = oex * (dy + oey) - (dx + oex) * oey
-        term = Math.sqrt(r**2 * dr**2 - D**2)
+        # rounding errors cause it to be negative sometimes
+        t = r**2 * dr**2 - D**2
+        t = 0 if t < 0
+
+        term = Math.sqrt(t)
         iex = (D * dy + sign * sgn(dy) * dx * term) / dr**2
         iey = (-D * dx + sign * Math.abs(dy) * term) / dr**2
 
@@ -209,134 +215,13 @@ draw = !->
         a #r #r 0 0 #{if d-sign > 0 then 1 else 0} #ddx #ddy \
         Z
         "
-    #..select \.start .attr \d (player) ->
-      #start = player.0
-      #cx = x start.x
-      #cy = y start.y
-      #r = 2 * d3.max start.edges, (.bandwidth)
-      #out-edge = state.strategies[player]path.0
-      #line = alloc-line state, users, player, out-edge
-      #{angle, offset-start, offset-end} = line
-      #offset-start -= out-edge.bandwidth / 2
-      #offset-end -= out-edge.bandwidth / 2
-      #offset-start *= 4; offset-end *= 4
-
-      #if start is out-edge.0
-        #x2 = x out-edge.1.x
-        #y2 = y out-edge.1.y
-        #sign = d-sign = 1
-      #else
-        #x2 = x out-edge.0.x
-        #y2 = y out-edge.0.y
-        #sign = d-sign = -1
-
-      #osx = offset-start * Math.sin angle
-      #osy = offset-start * Math.cos angle
-      #oex = offset-end * Math.sin angle
-      #oey = offset-end * Math.cos angle
-
-      ## intersect offset-start line with circle
-      #dx = x2 - cx
-      #dy = y2 - cy
-      #dr = Math.sqrt dx**2 + dy**2
-      #D = osx * (dy + osy) - (dx + osx) * osy
-      ## rounding errors cause it to be negative sometimes
-      #t = r**2 * dr**2 - D**2
-      #t = 0 if t < 0
-
-      #term = Math.sqrt(t)
-
-      #sgn = -> if it < 0 then -1 else 1
-
-      #sign *= if angle > 0 then -1 else 1
-
-      #isx = (D * dy + sign * sgn(dy) * dx * term) / dr**2
-      #isy = (-D * dx + sign * Math.abs(dy) * term) / dr**2
-
-      ## offset-end line
-      #D = oex * (dy + oey) - (dx + oex) * oey
-      #term = Math.sqrt(r**2 * dr**2 - D**2)
-      #iex = (D * dy + sign * sgn(dy) * dx * term) / dr**2
-      #iey = (-D * dx + sign * Math.abs(dy) * term) / dr**2
-
-      #ddx = iex - isx
-      #ddy = iey - isy
-
-      ## center to offset-end, then arc to offset-start, close
-      #"
-      #M #cx #cy \
-      #l #isx #isy \
-      #a #r #r 0 0 #{if d-sign > 0 then 1 else 0} #ddx #ddy \
-      #Z
-      #"
-      ##{a #r #r 0 0 1 #iex #iey} \
-    #..select \.end .attr \d (player) ->
-      #end = player.1
-      #cx = x end.x
-      #cy = y end.y
-      #r = 2 * d3.max end.edges, (.bandwidth)
-      #out-edge = state.strategies[player]path[*-1]
-      #line = alloc-line state, users, player, out-edge
-      #{angle, offset-start, offset-end} = line
-      #offset-start -= out-edge.bandwidth / 2
-      #offset-end -= out-edge.bandwidth / 2
-      #offset-start *= 4; offset-end *= 4
-
-      #if end is out-edge.1
-        #x2 = x out-edge.0.x
-        #y2 = y out-edge.0.y
-        #sign = d-sign = -1
-      #else
-        #x2 = x out-edge.1.x
-        #y2 = y out-edge.1.y
-        #sign = d-sign = 1
-
-      #osx = offset-start * Math.sin angle
-      #osy = offset-start * Math.cos angle
-      #oex = offset-end * Math.sin angle
-      #oey = offset-end * Math.cos angle
-
-      ## intersect offset-start line with circle
-      #dx = x2 - cx
-      #dy = y2 - cy
-      #dr = Math.sqrt dx**2 + dy**2
-      #D = osx * (dy + osy) - (dx + osx) * osy
-      ## rounding errors cause it to be negative sometimes
-      #t = r**2 * dr**2 - D**2
-      #t = 0 if t < 0
-
-      #term = Math.sqrt(t)
-
-      #sgn = -> if it < 0 then -1 else 1
-
-      #sign *= if angle > 0 then -1 else 1
-
-      #isx = (D * dy + sign * sgn(dy) * dx * term) / dr**2
-      #isy = (-D * dx + sign * Math.abs(dy) * term) / dr**2
-
-      ## offset-end line
-      #D = oex * (dy + oey) - (dx + oex) * oey
-      #term = Math.sqrt(r**2 * dr**2 - D**2)
-      #iex = (D * dy + sign * sgn(dy) * dx * term) / dr**2
-      #iey = (-D * dx + sign * Math.abs(dy) * term) / dr**2
-
-      #ddx = iex - isx
-      #ddy = iey - isy
-
-      ## center to offset-end, then arc to offset-start, close
-      #"
-      #M #cx #cy \
-      #l #isx #isy \
-      #a #r #r 0 0 #{if d-sign > 0 then 1 else 0} #ddx #ddy \
-      #Z
-      #"
-      #{a #r #r 0 0 1 #iex #iey} \
   d3.select \#players .select-all \.player .data players
     ..exit!remove!
     ..enter!append \g
       ..attr \class \player
       ..attr \id -> "player-#it"
       ..append \g .attr \class \path
+        .attr \stroke player-color
     ..select \.path .each (player) ->
       s = state.strategies[player]
 
@@ -350,7 +235,7 @@ draw = !->
           y1: (.y1)
           x2: (.x2)
           y2: (.y2)
-          \stroke-width : s.bandwidth * 4
+          \stroke-width : s.bandwidth * stroke-scale
         .classed \bottleneck (.bottleneck)
 
 draw!

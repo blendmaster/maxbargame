@@ -10,26 +10,6 @@
     fill: none !important;
 }
 
-#player-0, .player-0 {
-  fill: orange;
-  stroke: orange;
-}
-
-#player-1, .player-1 {
-  fill: green;
-  stroke: green;
-}
-
-#player-2, .player-2 {
-  fill: blue;
-  stroke: blue;
-}
-
-#player-3, .player-3 {
-  fill: chartreuse;
-  stroke: chartreuse;
-}
-
 .player:hover > .path > .bottleneck, .player.hover > .path > .bottleneck {
     animation: stress;
     animation-duration: 0.5s;
@@ -92,11 +72,6 @@
   left: 50%;
   width: 20em;
   text-align: center;
-}
-
-body {
-  display: -webkit-flex;
-  display: flex;
 }
 
 #make-new {

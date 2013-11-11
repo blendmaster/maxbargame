@@ -1,15 +1,19 @@
+id = 0
+
 log = -> # NOP
 # log = console.log
 
 class Value then to-string: -> @id
 
-class Vertex extends Value then (@id, @x, @y) ->
+class Vertex extends Value then (@x, @y) ->
+  @id = id++
   @edges = [] # edges connecting this vertex
   @neighbors = {} # edge -> vertex
   @srobhgien = {} # vertex -> edge
   @player = void # player who occupies this vertex with endpoint, or void
 
-class Edge extends Value then (@id, @0, @1, @bandwidth) ->
+class Edge extends Value then (@0, @1, @bandwidth) ->
+  @id = id++
   @length = 2
   @0.edges.push this
   @1.edges.push this
@@ -18,7 +22,8 @@ class Edge extends Value then (@id, @0, @1, @bandwidth) ->
   @0.srobhgien[@1] = this
   @1.srobhgien[@0] = this
 
-class Player extends Value then (@id, @0, @1) ->
+class Player extends Value then (@0, @1) ->
+  @id = id++
   @length = 2
   @0.player = this
   @1.player = this
@@ -207,7 +212,6 @@ function maxbargame topology, players, strategies
         next = allocate do
           topology
           next-paths
-          player
 
         log next
       else
