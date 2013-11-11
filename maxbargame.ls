@@ -1,13 +1,6 @@
-vertices = (.map ([x, y]) -> new Vertex x*5, y*5) [] =
-  * 50 10
-  * 45 40
-  * 70 30
-  * 75 50
-  * 90 60
-  * 80 90
-  * 40 85
-  * 30 90
-  * 10 50
+width = 500; height = 500
+
+vertices = d3.range 9 .map -> new Vertex
 edges = (.map ([s, t, b]) -> new Edge vertices[s], vertices[t], b) [] =
   * 0 1 10
   * 1 2 7
@@ -46,17 +39,28 @@ game = maxbargame do
 
 stroke-scale = 2
 
-drag = d3.behavior.drag!
-  .origin -> it
-  .on \drag !->
-    it{x, y} = d3.event
-    draw!
+force = d3.layout.force!
+  .size [width, height]
+  .nodes vertices
+  .links edges
+  .link-distance 100
+  .charge -500
 
 idx = 0
+state = game[idx]
+users = {}
+for player, strategy of state.strategies
+  for edge in strategy.path
+    users[][edge]push player
 
 document.get-element-by-id \play-pause
   .add-event-listener \click !->
     idx++
+    state := game[idx]
+    users := {}
+    for player, strategy of state.strategies
+      for edge in strategy.path
+        users[][edge]push player
     draw!
 
 alloc-line = (state, users, player, edge) -->
@@ -101,14 +105,11 @@ alloc-line = (state, users, player, edge) -->
     offset, x1, x2, y1, y2, bottleneck: edge is strategy.bottleneck
   }
 
+
+force.on \tick !-> draw!
+
 # draw stuff
 draw = !->
-  state = game[idx]
-  users = {}
-  for player, strategy of state.strategies
-    for edge in strategy.path
-      users[][edge]push player
-
   d3.select \#edges .select-all \.edge .data edges
     ..exit!remove!
     ..enter!append \line .attr \class \edge
@@ -122,7 +123,7 @@ draw = !->
     ..exit!remove!
     ..enter!append \circle
       .attr \class \vertex
-      .call drag
+      .call force.drag
       .on \mouseenter !->
         if it.player?
           d3.select "\#player-#that" .classed \hover true
@@ -238,6 +239,5 @@ draw = !->
           \stroke-width : s.bandwidth * stroke-scale
         .classed \bottleneck (.bottleneck)
 
-draw!
-
-
+force.start!
+# draw!

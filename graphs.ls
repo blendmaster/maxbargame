@@ -5,7 +5,8 @@ log = -> # NOP
 
 class Value then to-string: -> @id
 
-class Vertex extends Value then (@x, @y) ->
+class Vertex extends Value then () ->
+  @x = @y = void
   @id = id++
   @edges = [] # edges connecting this vertex
   @neighbors = {} # edge -> vertex
@@ -13,6 +14,8 @@ class Vertex extends Value then (@x, @y) ->
   @player = void # player who occupies this vertex with endpoint, or void
 
 class Edge extends Value then (@0, @1, @bandwidth) ->
+  @source = @0
+  @target = @1
   @id = id++
   @length = 2
   @0.edges.push this

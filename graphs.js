@@ -30,6 +30,8 @@ Edge = (function(superclass){
     this[0] = $0;
     this[1] = $1;
     this.bandwidth = bandwidth;
+    this.source = this[0];
+    this.target = this[1];
     this.id = id++;
     this.length = 2;
     this[0].edges.push(this);
