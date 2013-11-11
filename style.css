@@ -1,9 +1,9 @@
 .edge {
-  stroke: rgba(0,0,0,0.1)
+  stroke: rgba(0,0,0,0.05)
 }
 
 .vertex {
-  fill: #aaa;
+  fill: #ccc;
 }
 
 .path {

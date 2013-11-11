@@ -49,9 +49,10 @@ force = d3.layout.force!
 idx = 0
 state = game[idx]
 users = {}
-for player, strategy of state.strategies
-  for edge in strategy.path
-    users[][edge]push player
+let
+  for player, strategy of state.strategies
+    for edge in strategy.path
+      users[][edge]push player
 
 document.get-element-by-id \play-pause
   .add-event-listener \click !->
@@ -61,15 +62,13 @@ document.get-element-by-id \play-pause
     for player, strategy of state.strategies
       for edge in strategy.path
         users[][edge]push player
-    draw!
+    force.stop!
+    draw 2000ms
 
 alloc-line = (state, users, player, edge) -->
   strategy = state.strategies[player]
 
-  x1 = edge.0.x
-  x2 = edge.1.x
-  y1 = edge.0.y
-  y2 = edge.1.y
+  {x: x1, y: y1} = edge.0; {x: x2, y: y2} = edge.1;
 
   # adjust to angle of path, so that all allocations on the edge
   # are shown
@@ -105,139 +104,154 @@ alloc-line = (state, users, player, edge) -->
     offset, x1, x2, y1, y2, bottleneck: edge is strategy.bottleneck
   }
 
-
 force.on \tick !-> draw!
 
+transition = (sel, duration) ->
+  if duration > 0
+    sel.transition!duration duration
+  else
+    sel
+
+fade-out = (it, duration) ->
+  it.exit!
+    .remove!
+    .attr \class null # keep out of subsequent selections
+    .transition!duration duration .style \opacity 0.01 .remove!
+
 # draw stuff
-draw = !->
+draw = !(duration) ->
   d3.select \#edges .select-all \.edge .data edges
-    ..exit!remove!
+    fade-out .., duration
     ..enter!append \line .attr \class \edge
-    ..attr do
+    transition .. .attr do
       x1: (.0.x)
       y1: (.0.y)
       x2: (.1.x)
       y2: (.1.y)
       \stroke-width : (.bandwidth) >> (* stroke-scale)
   d3.select \#vertices .select-all \.vertex .data vertices
-    ..exit!remove!
+    fade-out .., duration
     ..enter!append \circle
       .attr \class \vertex
       .call force.drag
-      .on \mouseenter !->
-        if it.player?
-          d3.select "\#player-#that" .classed \hover true
-          d3.select \#topology .classed \dim true
-      .on \mouseleave !->
-        if it.player?
-          d3.select "\#player-#that" .classed \hover false
-          d3.select \#topology .classed \dim false
-    ..attr do
+    transition .. .attr do
       cx: (.x)
       cy: (.y)
       r: -> 0.5 * stroke-scale * d3.max it.edges, (.bandwidth)
   d3.select \#wedges .select-all \.wedges .data vertices
-    ..exit!remove!
+    fade-out .., duration
     ..enter!append \g
       ..attr \class \wedges
-    w = ..select-all \.wedge .data ->
-      p = []
-      for edge in it.edges
-        for player in users[edge] || 0
-          p.push {player, edge}
-      return p
+    w = ..select-all \.wedge .data do
+      ->
+        p = []
+        for edge in it.edges
+          for player in users[edge] || 0
+            p.push {player, edge}
+        return p
+      ->
+        "#{it.player}#{it.edge}"
     w
-      ..exit!remove!
+      ..exit!transition!duration duration .style \opacity \0.01 .remove!
       ..enter!append \path
-      ..attr \class \wedge
-      ..style \fill (.player) >> player-color
-      ..attr \d ({player, edge}, i, vertex-id) ->
-        vertex = vertices[vertex-id]
+        ..attr \class \wedge
+        ..style \opacity 0.01
+        ..style \fill (.player) >> player-color
+      transition .., duration
+        .attr \d ({player, edge}, i, vertex-id) ->
+          vertex = vertices[vertex-id]
 
-        cx = vertex.x
-        cy = vertex.y
-        r = 0.5 * stroke-scale * d3.max vertex.edges, (.bandwidth)
-        line = alloc-line state, users, player, edge
+          cx = vertex.x
+          cy = vertex.y
+          r = 0.5 * stroke-scale * d3.max vertex.edges, (.bandwidth)
+          line = alloc-line state, users, player, edge
 
-        {angle, offset-start, offset-end} = line
-        offset-start -= edge.bandwidth / 2
-        offset-end -= edge.bandwidth / 2
-        offset-start *= stroke-scale; offset-end *= stroke-scale
+          {angle, offset-start, offset-end} = line
+          offset-start -= edge.bandwidth / 2
+          offset-end -= edge.bandwidth / 2
+          offset-start *= stroke-scale; offset-end *= stroke-scale
 
-        if vertex is edge.0
-          x2 = edge.1.x
-          y2 = edge.1.y
-          sign = d-sign = 1
-        else
-          x2 = edge.0.x
-          y2 = edge.0.y
-          sign = d-sign = -1
+          if vertex is edge.0
+            x2 = edge.1.x
+            y2 = edge.1.y
+            sign = d-sign = 1
+          else
+            x2 = edge.0.x
+            y2 = edge.0.y
+            sign = d-sign = -1
 
-        osx = offset-start * Math.sin angle
-        osy = offset-start * Math.cos angle
-        oex = offset-end * Math.sin angle
-        oey = offset-end * Math.cos angle
+          osx = offset-start * Math.sin angle
+          osy = offset-start * Math.cos angle
+          oex = offset-end * Math.sin angle
+          oey = offset-end * Math.cos angle
 
-        # intersect offset-start line with circle
-        dx = x2 - cx
-        dy = y2 - cy
-        dr = Math.sqrt dx**2 + dy**2
-        D = osx * (dy + osy) - (dx + osx) * osy
-        # rounding errors cause it to be negative sometimes
-        t = r**2 * dr**2 - D**2
-        t = 0 if t < 0
+          # intersect offset-start line with circle
+          dx = x2 - cx
+          dy = y2 - cy
+          dr = Math.sqrt dx**2 + dy**2
+          D = osx * (dy + osy) - (dx + osx) * osy
+          # rounding errors cause it to be negative sometimes
+          t = r**2 * dr**2 - D**2
+          t = 0 if t < 0
 
-        term = Math.sqrt(t)
+          term = Math.sqrt(t)
 
-        sgn = -> if it < 0 then -1 else 1
+          sgn = -> if it < 0 then -1 else 1
 
-        sign *= if angle > 0 then -1 else 1
+          sign *= if angle > 0 then -1 else 1
 
-        isx = (D * dy + sign * sgn(dy) * dx * term) / dr**2
-        isy = (-D * dx + sign * Math.abs(dy) * term) / dr**2
+          isx = (D * dy + sign * sgn(dy) * dx * term) / dr**2
+          isy = (-D * dx + sign * Math.abs(dy) * term) / dr**2
 
-        # offset-end line
-        D = oex * (dy + oey) - (dx + oex) * oey
-        # rounding errors cause it to be negative sometimes
-        t = r**2 * dr**2 - D**2
-        t = 0 if t < 0
+          # offset-end line
+          D = oex * (dy + oey) - (dx + oex) * oey
+          # rounding errors cause it to be negative sometimes
+          t = r**2 * dr**2 - D**2
+          t = 0 if t < 0
 
-        term = Math.sqrt(t)
-        iex = (D * dy + sign * sgn(dy) * dx * term) / dr**2
-        iey = (-D * dx + sign * Math.abs(dy) * term) / dr**2
+          term = Math.sqrt(t)
+          iex = (D * dy + sign * sgn(dy) * dx * term) / dr**2
+          iey = (-D * dx + sign * Math.abs(dy) * term) / dr**2
 
-        ddx = iex - isx
-        ddy = iey - isy
+          ddx = iex - isx
+          ddy = iey - isy
 
-        # center to offset-end, then arc to offset-start, close
-        "
-        M #cx #cy \
-        l #isx #isy \
-        a #r #r 0 0 #{if d-sign > 0 then 1 else 0} #ddx #ddy \
-        Z
-        "
+          # center to offset-end, then arc to offset-start, close
+          "
+          M #cx #cy \
+          l #isx #isy \
+          a #r #r 0 0 #{if d-sign > 0 then 1 else 0} #ddx #ddy \
+          Z
+          "
+        .style \opacity 1
   d3.select \#players .select-all \.player .data players
     ..exit!remove!
     ..enter!append \g
-      ..attr \class \player
       ..attr \id -> "player-#it"
-      ..append \g .attr \class \path
-        .attr \stroke player-color
-    ..select \.path .each (player) ->
-      s = state.strategies[player]
-
-      line = s.path.map alloc-line state, users, player
-
-      d3.select this .select-all \.segment .data line
-        ..exit!remove!
-        ..enter!append \line .attr \class \segment
-        ..attr do
-          x1: (.x1)
-          y1: (.y1)
-          x2: (.x2)
-          y2: (.y2)
-          \stroke-width : s.bandwidth * stroke-scale
-        .classed \bottleneck (.bottleneck)
+      ..attr \class \player
+      ..style \stroke player-color
+    l = ..select-all \.segment .data do
+      (player) ->
+        state.strategies[player]path.map ->
+          edge: it
+          line: alloc-line(state, users, player, it)
+      (segment, i) ->
+        "#{segment.edge}#i"
+    l
+      ..exit!
+        .attr \class null
+        .transition!duration duration .style \opacity \0.01 .remove!
+      ..enter!append \line .attr \class \segment
+        ..style \stroke-opacity 0.01
+      transition .., duration
+        .attr do
+          x1: (.line.x1)
+          y1: (.line.y1)
+          x2: (.line.x2)
+          y2: (.line.y2)
+          \stroke-width : (d, i, j) ->
+            state.strategies[players[j]]bandwidth * stroke-scale
+        .style \stroke-opacity 1
+      ..classed \bottleneck (.bottleneck)
 
 force.start!
-# draw!
