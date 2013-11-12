@@ -194,7 +194,7 @@ State = (function(){
   return State;
 }());
 function allocate(topology, paths){
-  var residuals, i$, ref$, len$, edge, remaining, res$, player, strategies, users, globalBottleneck, bottlenecked, alloc, j$, len1$;
+  var residuals, i$, ref$, len$, edge, remaining, res$, player, strategies, users, globalBottleneck, bottlenecked, necks, alloc, j$, len1$;
   residuals = {};
   for (i$ = 0, len$ = (ref$ = topology.edges).length; i$ < len$; ++i$) {
     edge = ref$[i$];
@@ -216,6 +216,10 @@ function allocate(topology, paths){
     }
     globalBottleneck = minBy(topology.edges, fn$);
     bottlenecked = users[globalBottleneck];
+    if (bottlenecked == null) {
+      necks = topology.edges.map(fn1$);
+      debugger;
+    }
     alloc = residuals[globalBottleneck] / bottlenecked.length;
     log(globalBottleneck + " is bottleneck, used by " + bottlenecked + " => " + alloc);
     for (i$ = 0, len$ = bottlenecked.length; i$ < len$; ++i$) {
@@ -226,17 +230,26 @@ function allocate(topology, paths){
         edge = ref$[j$];
         log("decreasing " + edge + " residual " + residuals[edge] + " - " + alloc + " = " + (residuals[edge] - alloc));
         residuals[edge] -= alloc;
+        residuals[edge] = Math.max(0, residuals[edge]);
       }
     }
   }
   return strategies;
   function fn$(edge){
     var ref$;
-    return residuals[edge] / (((ref$ = users[edge]) != null ? ref$.length : void 8) || 0);
+    if (residuals[edge] === 0) {
+      return Infinity;
+    } else {
+      return residuals[edge] / (((ref$ = users[edge]) != null ? ref$.length : void 8) || 0);
+    }
+  }
+  function fn1$(edge){
+    var ref$;
+    return residuals[edge] + " " + users[edge] + " " + residuals[edge] / (((ref$ = users[edge]) != null ? ref$.length : void 8) || 0);
   }
 }
 function minBy(arr, view){
-  var min, minV, i$, x$, len$, v;
+  var min, minV, i$, x$, len$, v, ids, vs;
   min = Infinity;
   minV = void 8;
   for (i$ = 0, len$ = arr.length; i$ < len$; ++i$) {
@@ -246,6 +259,13 @@ function minBy(arr, view){
       minV = x$;
       min = v;
     }
+  }
+  if (minV == null) {
+    ids = arr.map(function(it){
+      return it.id;
+    });
+    vs = arr.map(view);
+    debugger;
   }
   return minV;
 }
@@ -260,20 +280,20 @@ function maxbargame(topology, players, strategies){
       strategy = strategies[player];
       br = bestResponse(topology, player, strategy, players.filter((fn$)).map(fn1$));
       log(player + ": " + strategy.path + " (" + strategy.bandwidth + ") => " + br.path + " (" + br.bandwidth + ")");
+      nextPaths = {};
+      for (p in strategies) {
+        strategy = strategies[p];
+        nextPaths[p] = strategy.path;
+      }
       if (br.bandwidth > strategy.bandwidth) {
         log("found better!");
         equilibrium = false;
-        nextPaths = {};
-        for (p in strategies) {
-          strategy = strategies[p];
-          nextPaths[p] = strategy.path;
-        }
         nextPaths[player] = br.path;
-        next = allocate(topology, nextPaths);
-        log(next);
       } else {
         log("no better...");
       }
+      next = allocate(topology, nextPaths);
+      log(next);
       states.push(new State(next, player));
       strategies = next;
     }
@@ -312,7 +332,74 @@ function connected(topology, without){
       }
     }
   }
-  return count === topology.vertices.length - 1;
+  if (without != null) {
+    return count === topology.vertices.length - 1;
+  } else {
+    return count === topology.vertices.length;
+  }
+}
+function randInt(min, max){
+  return Math.random() * (max - min) + min;
+}
+function randomTopology(numPlayers, numVertices){
+  var alpha, beta, vertices, res$, i$, i, edges, j$, j, weights, len$, e, paths, players, v1, r, v2, p;
+  alpha = 0.5;
+  beta = 0.5;
+  res$ = [];
+  for (i$ = 0; i$ < numVertices; ++i$) {
+    i = i$;
+    res$.push(new Vertex);
+  }
+  vertices = res$;
+  res$ = [];
+  for (i$ = 0; i$ < numVertices; ++i$) {
+    i = i$;
+    res$.push(new Edge(vertices[i], vertices[(i + 1) % vertices.length], randInt(3, 10)));
+  }
+  edges = res$;
+  for (i$ = 0; i$ < numVertices; ++i$) {
+    i = i$;
+    for (j$ = i + 2; j$ < numVertices; ++j$) {
+      j = j$;
+      if (Math.random() > 0.9) {
+        edges.push(new Edge(vertices[i], vertices[j], randInt(3, 10)));
+      }
+    }
+  }
+  weights = {};
+  for (i$ = 0, len$ = edges.length; i$ < len$; ++i$) {
+    e = edges[i$];
+    weights[e] = e.bandwidth;
+  }
+  paths = {};
+  res$ = [];
+  for (i$ = 0; i$ < numPlayers; ++i$) {
+    i = i$;
+    v1 = vertices[r = Math.floor(Math.random() * vertices.length)];
+    v2 = vertices[Math.floor(Math.random() * vertices.length)];
+    if (v2 === v1) {
+      v2 = vertices[(r + 1) % vertices.length];
+    }
+    p = new Player(v1, v2);
+    paths[p] = maxCapacityPath({
+      edges: edges,
+      vertices: vertices
+    }, weights, [v1, v2]);
+    res$.push(p);
+  }
+  players = res$;
+  if (!connected({
+    edges: edges,
+    vertices: vertices
+  })) {
+    throw new Error("not connected");
+  }
+  return {
+    vertices: vertices,
+    edges: edges,
+    players: players,
+    paths: paths
+  };
 }
 function extend$(sub, sup){
   function fun(){} fun.prototype = (sub.superclass = sup).prototype;

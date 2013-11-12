@@ -1,4 +1,4 @@
-width = 500; height = 500
+width = 800; height = 500
 
 vertices = d3.range 9 .map -> new Vertex
 edges = (.map ([s, t, b]) -> new Edge vertices[s], vertices[t], b) [] =
@@ -32,6 +32,9 @@ paths = {}
 for p, i in players
   paths[p] = path-idx[i]
 
+{vertices, edges, players, paths} = random-topology 10, 20
+topology = {vertices, edges}
+
 game = maxbargame do
   topology
   players
@@ -42,6 +45,19 @@ document.get-element-by-id \scale
   ..add-event-listener \input !->
     stroke-scale := parse-float @value
     draw!
+
+document.get-element-by-id \force-enabled
+  force-enabled = ..checked
+  ..add-event-listener \change !->
+    force-enabled := @checked
+    if force-enabled
+      for v in vertices
+        v.fixed = false
+      force.resume!
+    else
+      for v in vertices
+        v.fixed = true
+      force.stop!
 
 force = d3.layout.force!
   .size [width, height]
@@ -112,6 +128,7 @@ alloc-line = (state, users, player, edge) -->
 var selected
 
 svg = d3.select \#topology
+  ..attr {width, height}
   ..on \click !->
     if d3.event.target is this
       if d3.event.ctrl-key and selected?
@@ -125,7 +142,10 @@ svg = d3.select \#topology
         selected := void
         draw!
 
-force.on \tick !-> draw!
+force.on \tick !->
+  if not force-enabled
+    force.stop!
+  draw!
 
 transition = (sel, duration) ->
   if duration > 0
