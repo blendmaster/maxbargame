@@ -184,15 +184,15 @@ Strategy = (function(){
   }
   return Strategy;
 }());
-State = (function(){
-  State.displayName = 'State';
-  var prototype = State.prototype, constructor = State;
-  function State(strategies, turn){
+State = (function(superclass){
+  var prototype = extend$((import$(State, superclass).displayName = 'State', State), superclass).prototype, constructor = State;
+  function State(strategies, player){
     this.strategies = strategies;
-    this.turn = turn;
+    this.player = player;
+    this.id = id++;
   }
   return State;
-}());
+}(Value));
 function allocate(topology, paths){
   var residuals, i$, ref$, len$, edge, remaining, res$, player, strategies, users, globalBottleneck, bottlenecked, necks, alloc, j$, len1$;
   residuals = {};
@@ -269,43 +269,34 @@ function minBy(arr, view){
   }
   return minV;
 }
-function maxbargame(topology, players, strategies){
-  var states, iterations, equilibrium, i$, len$, player, strategy, br, nextPaths, p, next;
-  states = [new State(strategies)];
-  iterations = 0;
-  do {
-    equilibrium = true;
-    for (i$ = 0, len$ = players.length; i$ < len$; ++i$) {
-      player = players[i$];
-      strategy = strategies[player];
-      br = bestResponse(topology, player, strategy, players.filter((fn$)).map(fn1$));
-      log(player + ": " + strategy.path + " (" + strategy.bandwidth + ") => " + br.path + " (" + br.bandwidth + ")");
-      nextPaths = {};
-      for (p in strategies) {
-        strategy = strategies[p];
-        nextPaths[p] = strategy.path;
-      }
-      if (br.bandwidth > strategy.bandwidth) {
-        log("found better!");
-        equilibrium = false;
-        nextPaths[player] = br.path;
-      } else {
-        log("no better...");
-      }
-      next = allocate(topology, nextPaths);
-      log(next);
-      states.push(new State(next, player));
-      strategies = next;
-    }
-    iterations++;
-  } while (!equilibrium && iterations < 10);
-  return states;
-  function fn$(it){
+function maxbargame(topology, players, strategies, player){
+  var state, better, strategy, br, nextPaths, p, next;
+  state = new State(strategies, player);
+  better = false;
+  strategy = strategies[player];
+  br = bestResponse(topology, player, strategy, players.filter((function(it){
     return it !== player;
-  }
-  function fn1$(it){
+  })).map(function(it){
     return strategies[it];
+  }));
+  log(player + ": " + strategy.path + " (" + strategy.bandwidth + ") => " + br.path + " (" + br.bandwidth + ")");
+  nextPaths = {};
+  for (p in strategies) {
+    strategy = strategies[p];
+    nextPaths[p] = strategy.path;
   }
+  if (br.bandwidth > strategy.bandwidth) {
+    log("found better!");
+    better = true;
+    nextPaths[player] = br.path;
+  } else {
+    log("no better...");
+  }
+  next = allocate(topology, nextPaths);
+  return {
+    better: better,
+    state: new State(next)
+  };
 }
 function connected(topology, without){
   var seen, count, stack, v, e, ref$, neighbor;
@@ -341,10 +332,8 @@ function connected(topology, without){
 function randInt(min, max){
   return Math.random() * (max - min) + min;
 }
-function randomTopology(numPlayers, numVertices){
-  var alpha, beta, vertices, res$, i$, i, edges, j$, j, weights, len$, e, paths, players, v1, r, v2, p;
-  alpha = 0.5;
-  beta = 0.5;
+function randomTopology(numPlayers, numVertices, edgeProb){
+  var vertices, res$, i$, i, edges, j$, j, weights, len$, e, paths, players, v1, r, v2, p;
   res$ = [];
   for (i$ = 0; i$ < numVertices; ++i$) {
     i = i$;
@@ -361,7 +350,7 @@ function randomTopology(numPlayers, numVertices){
     i = i$;
     for (j$ = i + 2; j$ < numVertices; ++j$) {
       j = j$;
-      if (Math.random() > 0.9) {
+      if (Math.random() < edgeProb) {
         edges.push(new Edge(vertices[i], vertices[j], randInt(3, 10)));
       }
     }

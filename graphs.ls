@@ -141,8 +141,9 @@ class Strategy then (
   @bandwidth # Num
 ) ->
 
-class State
-  (@strategies, @turn) ->
+class State extends Value
+  (@strategies, @player) ->
+    @id = id++
 
 function allocate topology, paths
   residuals = {}
@@ -204,46 +205,35 @@ function min-by arr, view
     debugger
   min-v
 
-function maxbargame topology, players, strategies
-  states = [new State strategies]
-  iterations = 0
-  do
-    equilibrium = true
+function maxbargame topology, players, strategies, player
+  state = new State strategies, player
+  better = false
 
-    for player in players
-      strategy = strategies[player]
-      br = best-response topology,
-        player,
-        strategy,
-        players.filter (is not player) .map (strategies.)
+  strategy = strategies[player]
+  br = best-response topology,
+    player,
+    strategy,
+    players.filter (is not player) .map (strategies.)
 
-      log "#player: #{strategy.path} (#{strategy.bandwidth}) => #{br.path} (#{br.bandwidth})"
+  log "#player: #{strategy.path} (#{strategy.bandwidth}) => #{br.path} (#{br.bandwidth})"
 
-      next-paths = {}
-      for p, strategy of strategies
-        next-paths[p] = strategy.path
+  next-paths = {}
+  for p, strategy of strategies
+    next-paths[p] = strategy.path
 
-      if br.bandwidth > strategy.bandwidth
-        log "found better!"
-        equilibrium = false
+  if br.bandwidth > strategy.bandwidth
+    log "found better!"
+    better = true
 
-        next-paths[player] = br.path
-      else
-        log "no better..."
+    next-paths[player] = br.path
+  else
+    log "no better..."
 
-      next = allocate do
-        topology
-        next-paths
+  next = allocate do
+    topology
+    next-paths
 
-      log next
-
-      states.push new State next, player
-      strategies = next
-
-    iterations++
-  while not equilibrium and iterations < 10
-
-  return states
+  return {better, state: new State next}
 
 function connected topology, without
   return false if topology.vertices.length < 1
@@ -272,10 +262,7 @@ function connected topology, without
 function rand-int min, max
   Math.random! * (max - min) + min
 
-function random-topology num-players, num-vertices
-  alpha = 0.5
-  beta = 0.5
-
+function random-topology num-players, num-vertices, edge-prob
   #do
   vertices = [new Vertex for i til num-vertices]
 
@@ -285,7 +272,7 @@ function random-topology num-players, num-vertices
 
   for i til num-vertices
     for j from i + 2 til num-vertices
-      if Math.random! > 0.9
+      if Math.random! < edge-prob
         edges.push new Edge vertices[i], vertices[j], rand-int 3 10
 
   weights = {}

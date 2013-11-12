@@ -1,4 +1,4 @@
-width = 800; height = 500
+width = document.document-element.client-width - 50; height = 500
 
 vertices = d3.range 9 .map -> new Vertex
 edges = (.map ([s, t, b]) -> new Edge vertices[s], vertices[t], b) [] =
@@ -25,25 +25,58 @@ path-idx = (.map (.map (edges.))) [] =
   * 8 9 4
   * 5 4 2
 
-player-color = d3.scale.ordinal!
-  .range colorbrewer.Dark2.8
+#player-color = d3.scale.ordinal!
+  #.range colorbrewer.Dark2.8
+
+player-color = d3.scale.category20!
 
 paths = {}
 for p, i in players
   paths[p] = path-idx[i]
 
-{vertices, edges, players, paths} = random-topology 10, 20
-topology = {vertices, edges}
+var users, current-player, player-idx, state, states
+playing = false
+sames = 0
 
-game = maxbargame do
-  topology
-  players
-  allocate topology, paths
+randomize = !->
+  num-players = document.get-element-by-id \num-players .value |> parse-int _, 10
+  num-vertices = document.get-element-by-id \num-vertices .value |> parse-int _, 10
+  edge-prob = document.get-element-by-id \edge-prob .value |> parse-float
+  {vertices, edges, players, paths} :=
+    random-topology num-players, num-vertices, edge-prob
+  topology := {vertices, edges}
+
+init = !->
+  playing := false
+  sames := 0
+  current-player := players.0
+  player-idx := 0
+
+  state := new State allocate(topology, paths), current-player
+
+  users := {}
+  for player, strategy of state.strategies
+    for edge in strategy.path
+      users[][edge]push player
+
+  states := [state]
+
+init!
+
+document.get-element-by-id \randomize
+  ..add-event-listener \click !->
+    randomize!
+    init!
+    force.nodes vertices
+    force.links edges
+    force.start!
 
 document.get-element-by-id \scale
   stroke-scale = parse-float ..value
   ..add-event-listener \input !->
     stroke-scale := parse-float @value
+    if force-enabled
+      force.start!
     draw!
 
 document.get-element-by-id \force-enabled
@@ -59,32 +92,92 @@ document.get-element-by-id \force-enabled
         v.fixed = true
       force.stop!
 
+$ = document~get-element-by-id
+$ \edge-length
+  edge-length = parse-int ..value, 10
+  ..add-event-listener \input !->
+    edge-length := parse-int ..value, 10
+    force.start!
+$ \edge-strength
+  edge-strength = parse-float ..value
+  ..add-event-listener \input !->
+    edge-strength := parse-float ..value
+    force.start!
+$ \charges
+  charges = parse-float ..value
+  ..add-event-listener \input !->
+    charges := parse-float ..value
+    force.start!
+$ \charge-scale
+  charge-scale = parse-float ..value
+  ..add-event-listener \input !->
+    charge-scale := parse-float ..value
+    force.start!
+
 force = d3.layout.force!
   .size [width, height]
   .nodes vertices
   .links edges
-  .link-distance 100
-  .charge -500
+  .link-distance -> edge-length / it.bandwidth
+  .link-strength -> edge-strength * it.bandwidth / d3.max(edges, (.bandwidth))
+  .charge ->
+    -charges - charge-scale * d3.sum it.edges, -> users[it]?length or 0
 
-idx = 0
-state = game[idx]
-users = {}
-let
+document.get-element-by-id \step
+  .add-event-listener \click !-> step!
+
+step = (auto ? false) ->
+  d3.select-all \.dead .remove!
+
+  {state: next-state, better} =
+    maxbargame topology, players, state.strategies, current-player
+
+  player-idx := (1 + player-idx) % players.length
+  current-player := players[player-idx]
+
+  next-state.player = current-player
+
+  states.push next-state
+
+  state := next-state
+
+  users := {}
   for player, strategy of state.strategies
     for edge in strategy.path
       users[][edge]push player
 
-document.get-element-by-id \play-pause
-  .add-event-listener \click !->
-    idx++
-    return unless game[idx]?
-    state := game[idx]
-    users := {}
-    for player, strategy of state.strategies
-      for edge in strategy.path
-        users[][edge]push player
-    force.stop!
-    draw 2000ms
+  force.stop!
+  draw if auto then 0 else 2000ms
+
+  return better
+
+auto-play = !->
+  if player-idx is players.length
+    sames := 0
+
+  better = step true
+  if not better
+    sames++
+
+  if sames >= players.length
+    playing := false
+    pp.text-content = \play
+
+  if playing
+    set-timeout auto-play, speed
+
+speed = 250ms
+
+pp = document.get-element-by-id \play-pause
+  ..add-event-listener \click !->
+    if playing
+      playing := false
+      @text-content = \play
+    else
+      sames := 0
+      playing := true
+      @text-content = \pause
+      auto-play!
 
 alloc-line = (state, users, player, edge) -->
   strategy = state.strategies[player]
@@ -156,7 +249,7 @@ transition = (sel, duration) ->
 fade-out = (it, duration) ->
   it.exit!
     .remove!
-    .attr \class null # keep out of subsequent selections
+    .attr \class \dead # keep out of subsequent selections
     .transition!duration duration .style \opacity 0.01 .remove!
 
 identity = -> it
@@ -170,11 +263,12 @@ drag-edge = d3.behavior.drag!
     paths = {}
     for p, strategy of state.strategies
       paths[p] = strategy.path
-    state := new State allocate topology, paths
+    state := new State allocate(topology, paths), current-player
+    states[*-1] = state
     draw!
   .on \dragend !->
     #draw 1000ms
-    force.resume!
+    force.start!
 
 # draw stuff
 draw = !(duration) ->
@@ -359,5 +453,78 @@ draw = !(duration) ->
             state.strategies[players[j]]bandwidth * stroke-scale
         .style \stroke-opacity 1
       ..classed \bottleneck (.line.bottleneck)
+
+  row-height = 15
+  row-width = 100 / players.length
+  max-bandwidth = d3.max edges, (.bandwidth)
+  b-scale = d3.scale.linear!
+    .domain [0 max-bandwidth]
+    .range [0 row-height]
+
+  d3.select \#states
+    ..attr \height (players.length + 2)* row-height
+    ..attr \width 2 * row-height + states.length * row-width
+    ..select-all \.player-row .data players, identity
+      ..exit!remove!
+      ..enter!append \g
+        .attr \id -> "player-row-#it"
+        .attr \class \player-row
+        .attr \transform (it, i) -> "translate(0, #{i * row-height})"
+        .append \rect .attr do
+          class: \icon
+          x: 0
+          y: 0
+          width: row-height
+          height: row-height
+          fill: player-color
+      s = ..select-all \.state .data do
+        (player) ->
+          states.map (state) ->
+            {state.id, state.player, strategy: state.strategies[player]}
+        (.id)
+      s
+        ..exit!remove!
+        ..enter!append \g
+          ..attr do
+            class: \state
+          ..append \rect .attr do
+            class: \bg
+            x: (it, i) -> 2 * row-height + i * row-width
+            height: row-height
+            width: row-width
+            fill: (it, i, j) ->
+              if it.player is players[j]
+                \#eee
+              else
+                \transparent
+          ..append \rect .attr do
+            class: \fg
+            x: (it, i) -> 2 * row-height + i * row-width
+            width: row-width
+            fill: (it, i, j) ->
+              if it.player is players[j]
+                player-color it.player
+              else
+                \#aaa
+        ..select \.fg
+          ..attr \y -> row-height - b-scale it.strategy.bandwidth
+          ..attr \height -> b-scale it.strategy.bandwidth
+  d3.select \#total
+    ..attr \transform "translate(0, #{row-height * (1 + players.length)})"
+    s = ..select-all \.sum .data do
+      states.map ->
+        sum = 0
+        for p, strategy of it.strategies
+          sum += strategy.bandwidth
+        sum
+    s
+      ..exit!remove!
+      ..enter!append \rect
+        ..attr \class \sum
+      ..attr do
+        height: -> b-scale it / players.length
+        x: (it, i) -> 2 * row-height + i * row-width
+        width: row-width
+        y: -> row-height - b-scale it / players.length
 
 force.start!

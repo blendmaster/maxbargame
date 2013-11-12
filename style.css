@@ -88,3 +88,7 @@
 #make-new {
   fill: transparent;
 }
+
+input[type=range] {
+  width: 10em;
+}
